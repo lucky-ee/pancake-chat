@@ -10,6 +10,20 @@ let authToken = null;     // bearer token issued at login/register
 let currentRoom = null;   // { id, name }
 let stompClient = null;
 let roomSubscription = null;
+let typingSubscription = null;
+let receiptsSubscription = null;
+
+// ---------- typing indicator state ----------
+let typingDebounceTimer = null;   // clears "I'm typing" after a pause
+let isTypingSent = false;         // have we told the server we're typing right now
+const activeTypers = new Map();   // username -> safety-expiry timeout id
+
+// ---------- read receipt state ----------
+let receiptsByUser = {};          // username -> last read message id
+let currentMaxMessageId = null;   // highest message id seen in this room
+let lastSentReadId = null;        // last id we told the server we'd read
+let lastOwnMessageEl = null;      // DOM node of the last message *I* sent
+let lastOwnMessageId = null;
 
 // ---------- element refs ----------
 const screens = {
@@ -139,6 +153,7 @@ document.getElementById('create-room-btn').onclick = async () => {
 
 document.getElementById('back-btn').onclick = () => {
   disconnectSocket();
+  resetRoomState();
   showScreen('rooms');
   loadRooms();
 };
@@ -150,10 +165,26 @@ async function enterRoom(room) {
   currentRoom = room;
   document.getElementById('chat-room-name').textContent = room.name;
   document.getElementById('messages').innerHTML = '';
+  resetRoomState();
   showScreen('chat');
 
   await loadHistory(room.id);
+  await loadReceipts(room.id);
   connectSocket(room.id);
+}
+
+function resetRoomState() {
+  activeTypers.forEach(timeoutId => clearTimeout(timeoutId));
+  activeTypers.clear();
+  clearTimeout(typingDebounceTimer);
+  isTypingSent = false;
+  updateTypingIndicatorUI();
+
+  receiptsByUser = {};
+  currentMaxMessageId = null;
+  lastSentReadId = null;
+  lastOwnMessageEl = null;
+  lastOwnMessageId = null;
 }
 
 async function loadHistory(roomId) {
@@ -163,6 +194,17 @@ async function loadHistory(roomId) {
     scrollToBottom();
   } catch (err) {
     renderSystemLine(`Could not load history: ${err.message}`);
+  }
+}
+
+async function loadReceipts(roomId) {
+  try {
+    const receipts = await apiFetch(`/api/rooms/${roomId}/receipts`);
+    receipts.forEach(r => { receiptsByUser[r.username] = r.lastReadMessageId; });
+    updateSeenIndicator();
+  } catch (err) {
+    // Non-critical — read receipts are a nice-to-have, don't block the room.
+    console.warn('Could not load read receipts:', err.message);
   }
 }
 
@@ -182,6 +224,18 @@ function connectSocket(roomId) {
       const message = JSON.parse(frame.body);
       renderMessage(message);
       scrollToBottom();
+      sendReadReceipt();
+    });
+
+    typingSubscription = stompClient.subscribe(`/topic/room/${roomId}/typing`, (frame) => {
+      const event = JSON.parse(frame.body);
+      handleTypingEvent(event);
+    });
+
+    receiptsSubscription = stompClient.subscribe(`/topic/room/${roomId}/receipts`, (frame) => {
+      const receipt = JSON.parse(frame.body);
+      receiptsByUser[receipt.username] = receipt.lastReadMessageId;
+      updateSeenIndicator();
     });
 
     // Announce presence
@@ -189,6 +243,9 @@ function connectSocket(roomId) {
       sender: currentUser.username,
       content: '',
     }));
+
+    // We've now seen everything loaded in history.
+    sendReadReceipt();
   }, () => {
     statusDot.classList.remove('connected');
     renderSystemLine('Connection lost. Go back and re-enter the room to retry.');
@@ -197,6 +254,8 @@ function connectSocket(roomId) {
 
 function disconnectSocket() {
   if (roomSubscription) { roomSubscription.unsubscribe(); roomSubscription = null; }
+  if (typingSubscription) { typingSubscription.unsubscribe(); typingSubscription = null; }
+  if (receiptsSubscription) { receiptsSubscription.unsubscribe(); receiptsSubscription = null; }
   if (stompClient && stompClient.connected) { stompClient.disconnect(); }
   stompClient = null;
   document.getElementById('chat-status').classList.remove('connected');
@@ -213,13 +272,114 @@ document.getElementById('message-form').onsubmit = (e) => {
     content,
   }));
   input.value = '';
+  stopTyping();
 };
+
+// ---------- typing indicator ----------
+document.getElementById('message-input').addEventListener('input', () => {
+  if (!stompClient || !stompClient.connected) return;
+
+  if (!isTypingSent) {
+    sendTyping(true);
+    isTypingSent = true;
+  }
+  clearTimeout(typingDebounceTimer);
+  typingDebounceTimer = setTimeout(stopTyping, 2500); // auto-stop after a pause
+});
+
+function stopTyping() {
+  clearTimeout(typingDebounceTimer);
+  if (isTypingSent) {
+    sendTyping(false);
+    isTypingSent = false;
+  }
+}
+
+function sendTyping(isTyping) {
+  if (!stompClient || !stompClient.connected || !currentRoom) return;
+  stompClient.send(`/app/chat.typing/${currentRoom.id}`, {}, JSON.stringify({ typing: isTyping }));
+}
+
+function handleTypingEvent(event) {
+  if (!currentUser || event.username === currentUser.username) return; // ignore our own echo
+
+  if (activeTypers.has(event.username)) {
+    clearTimeout(activeTypers.get(event.username));
+  }
+
+  if (event.typing) {
+    // Safety-expiry: if a "stopped typing" event is ever lost (dropped
+    // connection, etc.), this clears the indicator on its own after 4s.
+    const timeoutId = setTimeout(() => {
+      activeTypers.delete(event.username);
+      updateTypingIndicatorUI();
+    }, 4000);
+    activeTypers.set(event.username, timeoutId);
+  } else {
+    activeTypers.delete(event.username);
+  }
+  updateTypingIndicatorUI();
+}
+
+function updateTypingIndicatorUI() {
+  const el = document.getElementById('typing-indicator');
+  const names = Array.from(activeTypers.keys());
+
+  if (names.length === 0) {
+    el.classList.add('hidden');
+    el.textContent = '';
+  } else if (names.length === 1) {
+    el.textContent = `${names[0]} is typing…`;
+    el.classList.remove('hidden');
+  } else if (names.length === 2) {
+    el.textContent = `${names[0]} and ${names[1]} are typing…`;
+    el.classList.remove('hidden');
+  } else {
+    el.textContent = `${names.length} people are typing…`;
+    el.classList.remove('hidden');
+  }
+}
+
+// ---------- read receipts ----------
+function sendReadReceipt() {
+  if (!stompClient || !stompClient.connected) return;
+  if (currentMaxMessageId == null) return;
+  if (lastSentReadId === currentMaxMessageId) return; // nothing new to report
+
+  stompClient.send(`/app/chat.read/${currentRoom.id}`, {}, JSON.stringify({
+    lastReadMessageId: currentMaxMessageId,
+  }));
+  lastSentReadId = currentMaxMessageId;
+}
+
+function updateSeenIndicator() {
+  const existing = document.getElementById('seen-marker');
+  if (existing) existing.remove();
+
+  if (!lastOwnMessageEl || lastOwnMessageId == null || !currentUser) return;
+
+  const seenBy = Object.entries(receiptsByUser)
+    .filter(([user, lastId]) => user !== currentUser.username && lastId >= lastOwnMessageId)
+    .map(([user]) => user);
+
+  if (seenBy.length === 0) return;
+
+  const marker = document.createElement('div');
+  marker.id = 'seen-marker';
+  marker.className = 'msg-receipt seen';
+  marker.textContent = seenBy.length === 1 ? `Seen by ${seenBy[0]}` : `Seen by ${seenBy.join(', ')}`;
+  lastOwnMessageEl.insertAdjacentElement('afterend', marker);
+}
 
 // ---------- rendering ----------
 function renderMessage(msg) {
   const container = document.getElementById('messages');
   const line = document.createElement('div');
   line.className = 'msg-line';
+
+  if (msg.id != null) {
+    currentMaxMessageId = currentMaxMessageId == null ? msg.id : Math.max(currentMaxMessageId, msg.id);
+  }
 
   if (msg.type === 'JOIN' || msg.type === 'LEAVE') {
     line.innerHTML = `<span class="msg-time">${formatTime(msg.createdAt)}</span>` +
@@ -230,8 +390,19 @@ function renderMessage(msg) {
       `<span class="msg-time">${formatTime(msg.createdAt)}</span>` +
       `<span class="msg-sender ${isMe ? 'me' : 'other'}">&lt;${escapeHtml(msg.sender)}&gt;</span>` +
       `<span class="msg-content">${escapeHtml(msg.content)}</span>`;
+
+    if (isMe) {
+      const existing = document.getElementById('seen-marker');
+      if (existing) existing.remove();
+      lastOwnMessageEl = line;
+      lastOwnMessageId = msg.id;
+    }
   }
   container.appendChild(line);
+
+  if (msg.type !== 'JOIN' && msg.type !== 'LEAVE') {
+    updateSeenIndicator();
+  }
 }
 
 function renderSystemLine(text) {

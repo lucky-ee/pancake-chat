@@ -235,6 +235,28 @@ button.link:hover { color: var(--amber); }
 .msg-sender.other { color: var(--amber); }
 .msg-system { color: var(--muted); font-style: italic; }
 
+.msg-receipt {
+  display: block;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--muted);
+  margin: 1px 0 6px 0;
+  padding-left: 2px;
+}
+.msg-receipt.seen { color: var(--teal); }
+.msg-receipt::before { content: "✓ "; }
+
+.typing-indicator {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 0 16px 6px;
+  min-height: 16px;
+  opacity: 0.9;
+}
+.typing-indicator.hidden { visibility: hidden; }
+
 .message-form {
   display: flex;
   gap: 8px;
