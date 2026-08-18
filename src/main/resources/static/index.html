@@ -3,21 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Java Chat</title>
+<title>🥞 pancake-chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
+<!-- floating background sprinkles, purely decorative -->
+<div class="bg-sprinkles" aria-hidden="true">
+  <span>🥞</span><span>🍓</span><span>🫐</span><span>🧈</span><span>🍯</span><span>🥞</span><span>🍓</span>
+</div>
+
 <!-- ===== LOGIN / REGISTER SCREEN ===== -->
 <section id="auth-screen" class="screen">
   <div class="card">
-    <h1>💬 Java Chat</h1>
-    <p class="subtitle">Sign in or create an account</p>
+    <div class="mascot">🥞</div>
+    <h1>pancake-chat</h1>
+    <p class="subtitle">stack up and start chatting</p>
     <input id="auth-username" type="text" placeholder="Username" autocomplete="username">
     <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password">
     <div class="btn-row">
-      <button id="login-btn" class="primary">Login</button>
-      <button id="register-btn" class="secondary">Register</button>
+      <button id="login-btn" class="primary">Dig in →</button>
+      <button id="register-btn" class="secondary">New here?</button>
     </div>
     <p id="auth-error" class="error"></p>
   </div>
@@ -27,12 +36,12 @@
 <section id="rooms-screen" class="screen hidden">
   <div class="card wide">
     <div class="rooms-header">
-      <h1>Rooms</h1>
+      <h1>🧇 Rooms</h1>
       <span id="whoami"></span>
     </div>
     <div class="btn-row">
-      <input id="new-room-name" type="text" placeholder="New room name">
-      <button id="create-room-btn" class="primary">Create</button>
+      <input id="new-room-name" type="text" placeholder="Name a new room...">
+      <button id="create-room-btn" class="primary">+ Create</button>
     </div>
     <ul id="room-list"></ul>
     <p id="rooms-error" class="error"></p>
@@ -44,18 +53,24 @@
 <section id="chat-screen" class="screen hidden">
   <div class="chat-container">
     <div class="chat-header">
-      <button id="back-btn" class="link">&larr; Rooms</button>
+      <button id="back-btn" class="link">← Rooms</button>
       <h2 id="chat-room-name"></h2>
-      <span id="chat-status" class="status-dot disconnected"></span>
+      <span id="chat-status" class="status-dot disconnected" title="connection status"></span>
     </div>
     <div id="messages" class="messages"></div>
-    <div id="typing-indicator" class="typing-indicator hidden"></div>
+    <div id="typing-indicator" class="typing-indicator hidden">
+      <span id="typing-text"></span>
+      <span class="drip"><span></span><span></span><span></span></span>
+    </div>
     <form id="message-form" class="message-form">
-      <input id="message-input" type="text" placeholder="Type a message…" autocomplete="off">
-      <button type="submit" class="primary">Send</button>
+      <input id="message-input" type="text" placeholder="Say something tasty…" autocomplete="off">
+      <button type="submit" class="primary send-btn">🥞</button>
     </form>
   </div>
 </section>
+
+<!-- sprinkle-burst particles get injected here on send -->
+<div id="sprinkle-layer" aria-hidden="true"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>

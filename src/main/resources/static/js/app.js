@@ -273,6 +273,7 @@ document.getElementById('message-form').onsubmit = (e) => {
   }));
   input.value = '';
   stopTyping();
+  spawnSprinkles();
 };
 
 // ---------- typing indicator ----------
@@ -323,19 +324,20 @@ function handleTypingEvent(event) {
 
 function updateTypingIndicatorUI() {
   const el = document.getElementById('typing-indicator');
+  const textEl = document.getElementById('typing-text');
   const names = Array.from(activeTypers.keys());
 
   if (names.length === 0) {
     el.classList.add('hidden');
-    el.textContent = '';
+    textEl.textContent = '';
   } else if (names.length === 1) {
-    el.textContent = `${names[0]} is typing…`;
+    textEl.textContent = `${names[0]} is typing`;
     el.classList.remove('hidden');
   } else if (names.length === 2) {
-    el.textContent = `${names[0]} and ${names[1]} are typing…`;
+    textEl.textContent = `${names[0]} and ${names[1]} are typing`;
     el.classList.remove('hidden');
   } else {
-    el.textContent = `${names.length} people are typing…`;
+    textEl.textContent = `${names.length} people are typing`;
     el.classList.remove('hidden');
   }
 }
@@ -372,45 +374,92 @@ function updateSeenIndicator() {
 }
 
 // ---------- rendering ----------
+const BUBBLE_COLORS = ['blueberry', 'syrup', 'maple', 'butter'];
+
+function colorForUser(username) {
+  // Deterministic hash so the same username always gets the same color.
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = (hash * 31 + username.charCodeAt(i)) >>> 0;
+  }
+  return BUBBLE_COLORS[hash % BUBBLE_COLORS.length];
+}
+
 function renderMessage(msg) {
   const container = document.getElementById('messages');
-  const line = document.createElement('div');
-  line.className = 'msg-line';
 
   if (msg.id != null) {
     currentMaxMessageId = currentMaxMessageId == null ? msg.id : Math.max(currentMaxMessageId, msg.id);
   }
 
   if (msg.type === 'JOIN' || msg.type === 'LEAVE') {
-    line.innerHTML = `<span class="msg-time">${formatTime(msg.createdAt)}</span>` +
-      `<span class="msg-system">${escapeHtml(msg.content)}</span>`;
-  } else {
-    const isMe = currentUser && msg.sender === currentUser.username;
-    line.innerHTML =
-      `<span class="msg-time">${formatTime(msg.createdAt)}</span>` +
-      `<span class="msg-sender ${isMe ? 'me' : 'other'}">&lt;${escapeHtml(msg.sender)}&gt;</span>` +
-      `<span class="msg-content">${escapeHtml(msg.content)}</span>`;
-
-    if (isMe) {
-      const existing = document.getElementById('seen-marker');
-      if (existing) existing.remove();
-      lastOwnMessageEl = line;
-      lastOwnMessageId = msg.id;
-    }
+    const pill = document.createElement('div');
+    pill.className = 'msg-system';
+    pill.textContent = `🥞 ${msg.content}`;
+    container.appendChild(pill);
+    return;
   }
-  container.appendChild(line);
 
-  if (msg.type !== 'JOIN' && msg.type !== 'LEAVE') {
-    updateSeenIndicator();
+  const isMe = currentUser && msg.sender === currentUser.username;
+  const row = document.createElement('div');
+  row.className = `msg-row ${isMe ? 'me' : 'other'}`;
+
+  const avatar = document.createElement('div');
+  const avatarColor = isMe ? 'berry' : colorForUser(msg.sender);
+  avatar.className = `avatar avatar-${avatarColor}`;
+  avatar.textContent = msg.sender.charAt(0).toUpperCase();
+  row.appendChild(avatar);
+
+  const bubble = document.createElement('div');
+  bubble.className = isMe ? 'bubble' : `bubble bubble-${colorForUser(msg.sender)}`;
+  bubble.innerHTML =
+    (isMe ? '' : `<span class="bubble-sender">${escapeHtml(msg.sender)}</span>`) +
+    `${escapeHtml(msg.content)}<span class="bubble-time">${formatTime(msg.createdAt)}</span>`;
+  row.appendChild(bubble);
+
+  container.appendChild(row);
+
+  if (isMe) {
+    const existing = document.getElementById('seen-marker');
+    if (existing) existing.remove();
+    lastOwnMessageEl = row;
+    lastOwnMessageId = msg.id;
+  }
+
+  updateSeenIndicator();
+}
+
+// ---------- sprinkle-burst delight, fired on every send ----------
+const SPRINKLE_EMOJI = ['🍓', '🫐', '🧈', '🍯', '✨'];
+
+function spawnSprinkles() {
+  const sendBtn = document.querySelector('.send-btn');
+  if (!sendBtn) return;
+  const rect = sendBtn.getBoundingClientRect();
+  const layer = document.getElementById('sprinkle-layer');
+
+  for (let i = 0; i < 7; i++) {
+    const el = document.createElement('span');
+    el.className = 'sprinkle-particle';
+    el.textContent = SPRINKLE_EMOJI[Math.floor(Math.random() * SPRINKLE_EMOJI.length)];
+    el.style.left = `${rect.left + rect.width / 2}px`;
+    el.style.top = `${rect.top}px`;
+    const angle = (Math.random() - 0.5) * 140; // spread sideways
+    const distance = 60 + Math.random() * 50;
+    const dx = Math.sin(angle * Math.PI / 180) * distance;
+    const dy = -80 - Math.random() * 40;
+    el.style.setProperty('--end-transform', `translate(${dx}px, ${dy}px)`);
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 950);
   }
 }
 
 function renderSystemLine(text) {
   const container = document.getElementById('messages');
-  const line = document.createElement('div');
-  line.className = 'msg-line';
-  line.innerHTML = `<span class="msg-system">* ${escapeHtml(text)}</span>`;
-  container.appendChild(line);
+  const pill = document.createElement('div');
+  pill.className = 'msg-system';
+  pill.textContent = `⚠️ ${text}`;
+  container.appendChild(pill);
   scrollToBottom();
 }
 
