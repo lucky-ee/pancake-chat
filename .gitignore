@@ -14,3 +14,8 @@ target/
  
 # Logs
 *.log
+
+# Local config / credentials — never commit
+application-local.properties
+*.env
+.env
