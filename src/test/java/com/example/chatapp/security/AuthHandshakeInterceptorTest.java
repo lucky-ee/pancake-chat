@@ -24,11 +24,17 @@ class AuthHandshakeInterceptorTest {
 
     private TokenStore tokenStore;
     private AuthHandshakeInterceptor interceptor;
+    private MockHttpServletResponse mockResponse;
+    private ServerHttpResponse response;
+    private Map<String, Object> attributes;
 
     @BeforeEach
     void setUp() {
         tokenStore = new TokenStore();
         interceptor = new AuthHandshakeInterceptor(tokenStore);
+        mockResponse = new MockHttpServletResponse();
+        response = new ServletServerHttpResponse(mockResponse);
+        attributes = new HashMap<>();
     }
 
     private ServerHttpRequest requestWithParams(Map<String, String> params) {
@@ -41,8 +47,6 @@ class AuthHandshakeInterceptorTest {
     void validToken_bindsCorrectUsernameAndAllowsHandshake() {
         String token = tokenStore.issueToken("alice");
         ServerHttpRequest request = requestWithParams(Map.of("token", token));
-        ServerHttpResponse response = new ServletServerHttpResponse(new MockHttpServletResponse());
-        Map<String, Object> attributes = new HashMap<>();
 
         boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
 
@@ -53,9 +57,6 @@ class AuthHandshakeInterceptorTest {
     @Test
     void missingToken_rejectsHandshakeWith401AndSetsNoAttributes() {
         ServerHttpRequest request = requestWithParams(Map.of());
-        MockHttpServletResponse mockResponse = new MockHttpServletResponse();
-        ServerHttpResponse response = new ServletServerHttpResponse(mockResponse);
-        Map<String, Object> attributes = new HashMap<>();
 
         boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
 
@@ -69,9 +70,6 @@ class AuthHandshakeInterceptorTest {
         // A well-formed but never-issued token — the "invalid" case, distinct
         // from "missing" above.
         ServerHttpRequest request = requestWithParams(Map.of("token", "not-a-real-token"));
-        MockHttpServletResponse mockResponse = new MockHttpServletResponse();
-        ServerHttpResponse response = new ServletServerHttpResponse(mockResponse);
-        Map<String, Object> attributes = new HashMap<>();
 
         boolean allowed = interceptor.beforeHandshake(request, response, null, attributes);
 
@@ -86,8 +84,6 @@ class AuthHandshakeInterceptorTest {
         // Attacker rides along a legitimately-issued token but also injects a
         // "username" query param, hoping something downstream trusts it.
         ServerHttpRequest request = requestWithParams(Map.of("token", token, "username", "eve"));
-        ServerHttpResponse response = new ServletServerHttpResponse(new MockHttpServletResponse());
-        Map<String, Object> attributes = new HashMap<>();
 
         interceptor.beforeHandshake(request, response, null, attributes);
 
